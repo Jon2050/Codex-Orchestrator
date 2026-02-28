@@ -225,3 +225,25 @@ Codex-Orchestrator is a thin orchestration layer around `codex` and `gh` for mil
 
 It enforces sequencing and completion discipline for implementation.
 It is not a planning assistant.
+
+## Current Implementation (v1)
+
+The repository now includes a working Python CLI implementation:
+- package: `codexor`
+- command: `codexor run`
+- architecture spec: `docs/ARCHITECTURE.md`
+
+Installation for local usage:
+
+```bash
+python -m pip install -e .
+```
+
+Run:
+
+```bash
+codexor run \
+  --repo <owner/repo-or-local-path> \
+  --milestone "<milestone-name>" \
+  --prompt-template <path-to-snippet.md>
+```
