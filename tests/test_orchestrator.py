@@ -3,6 +3,7 @@ from pathlib import Path
 from codexor.orchestrator import Orchestrator
 from codexor.models import RunConfig, CodexRunResult, FinalSignal, RunStatus, MilestoneIssue
 
+@patch("builtins.input", return_value="")
 @patch("codexor.orchestrator.resolve_repo_target")
 @patch("codexor.orchestrator.load_open_milestone_issues")
 @patch("codexor.orchestrator.CodexRunner")
@@ -12,6 +13,7 @@ def test_orchestrator_successful_run(
     mock_runner_cls,
     mock_load_issues,
     mock_resolve_target,
+    mock_input,
     tmp_path,
 ):
     prompt_path = tmp_path / "prompt.md"
@@ -49,6 +51,7 @@ def test_orchestrator_successful_run(
     assert len(report.entries) == 1
     assert report.entries[0].signal == FinalSignal.ALL_DONE
 
+@patch("builtins.input", return_value="")
 @patch("codexor.orchestrator.resolve_repo_target")
 @patch("codexor.orchestrator.load_open_milestone_issues")
 @patch("codexor.orchestrator.CodexRunner")
@@ -58,6 +61,7 @@ def test_orchestrator_blocked_run(
     mock_runner_cls,
     mock_load_issues,
     mock_resolve_target,
+    mock_input,
     tmp_path,
 ):
     prompt_path = tmp_path / "prompt.md"

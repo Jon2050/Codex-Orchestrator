@@ -55,6 +55,12 @@ class Orchestrator:
             print(f"[codexor] Ordered issues for milestone '{self.config.milestone}':")
             for issue in ordered_issues:
                 print(f"  - #{issue.number}: {issue.title}")
+                
+            print("")
+            try:
+                input("[codexor] Press Enter to begin execution or Ctrl+C to abort... ")
+            except EOFError:
+                pass # Continue if running in non-interactive mode where stdin is closed
 
             for issue in ordered_issues:
                 issue_started = datetime.now(timezone.utc)
