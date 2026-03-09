@@ -111,14 +111,24 @@ class CodexRunner:
         def forward_input() -> None:
             while not stop_event.is_set():
                 try:
+                    import select
+                    if sys.platform != "win32":
+                        r, _, _ = select.select([sys.stdin], [], [], 0.1)
+                        if not r:
+                            continue
+                            
                     line = sys.stdin.buffer.readline()
                     if not line:
+                        break
+                    if stop_event.is_set() or process.poll() is not None:
                         break
                     process.stdin.write(line)
                     process.stdin.flush()
                 except OSError:
                     break
                 except ValueError:
+                    break
+                except Exception:
                     break
 
         output_thread = threading.Thread(target=forward_output, daemon=True)
