@@ -99,6 +99,7 @@ class IssueRunResult:
     status: IssueStatus
     signal: FinalSignal
     note: str
+    summary: str = ""
 
 
 @dataclass(slots=True)

@@ -20,7 +20,7 @@ from .models import (
 )
 from .reporting import ReportWriter, build_report_path
 from .repo import resolve_repo_target
-from .signals import parse_final_signal
+from .signals import parse_final_signal, parse_summary
 from .template import load_prompt_template, render_prompt
 
 
@@ -67,6 +67,7 @@ class Orchestrator:
                 )
                 codex_result = self.codex_runner.run(prompt=prompt, cwd=resolved_repo.local_path)
                 signal = parse_final_signal(codex_result.last_non_empty_line)
+                summary = parse_summary(codex_result.output_tail)
                 issue_finished = datetime.now(timezone.utc)
                 duration = int((issue_finished - issue_started).total_seconds())
 
@@ -79,6 +80,7 @@ class Orchestrator:
                         status=IssueStatus.DONE,
                         signal=signal,
                         note="Completed with ALL DONE.",
+                        summary=summary,
                     )
                     report.entries.append(entry)
                     writer.write(report)
@@ -93,6 +95,7 @@ class Orchestrator:
                         status=IssueStatus.BLOCKED,
                         signal=signal,
                         note="Codex requested manual intervention with BREAK ON ERROR.",
+                        summary=summary,
                     )
                     report.entries.append(entry)
                     report.finished_at = datetime.now(timezone.utc)
@@ -111,6 +114,7 @@ class Orchestrator:
                         "Codex exited without required signal. "
                         f"Last line: {codex_result.last_non_empty_line!r}"
                     ),
+                    summary=summary,
                 )
                 report.entries.append(entry)
                 report.finished_at = datetime.now(timezone.utc)

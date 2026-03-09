@@ -23,3 +23,11 @@ def parse_final_signal(last_non_empty_line: str) -> FinalSignal:
     if normalized == FinalSignal.BREAK_ON_ERROR.value:
         return FinalSignal.BREAK_ON_ERROR
     return FinalSignal.INVALID
+
+
+def parse_summary(output_tail: str) -> str:
+    """Parse the final summary from the output tail, if present."""
+    match = re.search(r"<summary>(.*?)</summary>", output_tail, flags=re.DOTALL | re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    return ""

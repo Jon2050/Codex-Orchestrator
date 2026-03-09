@@ -76,6 +76,20 @@ def render_report_markdown(report: RunReport) -> str:
             )
         )
     lines.append("")
+    
+    # Add summaries section
+    has_summaries = any(entry.summary.strip() for entry in report.entries)
+    if has_summaries:
+        lines.append("## Issue Summaries")
+        lines.append("")
+        for entry in report.entries:
+            if entry.summary.strip():
+                issue_key = entry.issue.key.raw if entry.issue.key else f"#{entry.issue.number}"
+                lines.append(f"### {issue_key}: {entry.issue.title}")
+                lines.append("")
+                lines.append(entry.summary.strip())
+                lines.append("")
+
     return "\n".join(lines)
 
 
