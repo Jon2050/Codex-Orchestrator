@@ -1,0 +1,24 @@
+﻿**********************
+nStart der Windows PowerShell-Aufzeichnung
+Startzeit: 20260309064402
+Benutzername: JONASDESKTOP\Jonas
+RunAs-Benutzer: JONASDESKTOP\Jonas
+Konfigurationsname: 
+Computer: JONASDESKTOP (Microsoft Windows NT 10.0.26200.0)
+Hostanwendung: powershell.exe -NoProfile -Command Start-Transcript -Path test_log.txt; & echo 'hello world'; Stop-Transcript
+Prozess-ID: 92272
+PSVersion: 5.1.26100.7920
+PSEdition: Desktop
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.26100.7920
+BuildVersion: 10.0.26100.7920
+CLRVersion: 4.0.30319.42000
+WSManStackVersion: 3.0
+PSRemotingProtocolVersion: 2.3
+SerializationVersion: 1.1.0.1
+**********************
+Die Aufzeichnung wurde gestartet. Die Ausgabedatei ist "test_log.txt".
+hello world
+**********************
+Ende der Windows PowerShell-Aufzeichnung
+Endzeit: 20260309064402
+**********************

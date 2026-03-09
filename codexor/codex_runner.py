@@ -86,75 +86,80 @@ class CodexRunner:
     def run(self, prompt: str, cwd: Path) -> CodexRunResult:
         tracker = _OutputTailTracker()
         
-        # Resolve executable to handle Windows .bat/.cmd files properly
         import shutil
+        import tempfile
+        import shlex
+        
+        # Resolve executable to handle Windows .bat/.cmd files properly
         executable = self.command[0]
         resolved_executable = shutil.which(executable)
-        
-        cmd_to_run = [resolved_executable] + self.command[1:] if resolved_executable else self.command.copy()
+        base_cmd = [resolved_executable] + self.command[1:] if resolved_executable else self.command.copy()
             
         # For codex, append the prompt as the last CLI argument to avoid piping stdin.
         if self.cli_tool == "codex":
-            cmd_to_run.append(prompt)
+            base_cmd.append(prompt)
             
-        process = subprocess.Popen(
-            cmd_to_run,
-            cwd=str(cwd),
-            stdin=sys.stdin,   # Inherit stdin natively for interactive TTY
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            bufsize=0,
-        )
-
-        assert process.stdout is not None
-
-        stop_event = threading.Event()
-
-        def forward_output() -> None:
-            while True:
-                chunk = process.stdout.read(1024)
-                if not chunk:
-                    break
-                text = chunk.decode(errors="replace")
-                sys.stdout.write(text)
-                sys.stdout.flush()
-                tracker.feed(text)
-
-        output_thread = threading.Thread(target=forward_output, daemon=True)
-        output_thread.start()
-
-        # Send issue-specific prompt via stdin ONLY for tools that aren't 'codex'.
-        if self.cli_tool != "codex":
-            # If we need to inject via stdin for other tools, we'd need PIPE, but since we inherited sys.stdin above,
-            # this would break if another tool needs piped input. However, Gemini works natively by just running it 
-            # and typing. If we wanted headless gemini we'd use `-p prompt`.
-            pass
-
-        try:
-            exit_code = process.wait()
-        except KeyboardInterrupt:
-            try:
-                if sys.platform != "win32":
-                    import signal
-                    process.send_signal(signal.SIGINT)
-            except Exception:
-                pass
+        with tempfile.TemporaryDirectory(prefix="codexor-") as tmpdir:
+            log_file = Path(tmpdir) / "output.log"
             
+            if sys.platform == "win32":
+                # Create a wrapper PS1 to use Start-Transcript
+                wrapper_ps1 = Path(tmpdir) / "run.ps1"
+                
+                escaped_args = []
+                for arg in base_cmd:
+                    # Double up quotes for PowerShell string literals
+                    escaped_args.append('"' + arg.replace('"', '""') + '"')
+                
+                ps_content = [
+                    f'Start-Transcript -Path "{log_file}"',
+                    f'& {" ".join(escaped_args)}',
+                    '$exit = $LASTEXITCODE',
+                    'Stop-Transcript',
+                    'exit $exit'
+                ]
+                wrapper_ps1.write_text("\n".join(ps_content), encoding="utf-8")
+                cmd_to_run = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(wrapper_ps1)]
+            else:
+                # Use script on Unix
+                flat_cmd = shlex.join(base_cmd)
+                if sys.platform == "darwin":
+                    cmd_to_run = ["script", "-q", str(log_file), flat_cmd]
+                else:
+                    cmd_to_run = ["script", "-q", "-e", "-c", flat_cmd, str(log_file)]
+
+            process = subprocess.Popen(
+                cmd_to_run,
+                cwd=str(cwd),
+                stdin=sys.stdin,   # Inherit stdin natively for interactive TTY
+                stdout=None,       # Output directly to terminal to satisfy TTY checks
+                stderr=None,
+            )
+
             try:
-                exit_code = process.wait(timeout=10.0)
-            except subprocess.TimeoutExpired:
-                process.kill()
                 exit_code = process.wait()
-            raise
-        finally:
-            stop_event.set()
-            tracker.finalize()
-            if process.stdin:
-                process.stdin.close()
-            if process.stdout:
-                process.stdout.close()
+            except KeyboardInterrupt:
+                try:
+                    if sys.platform != "win32":
+                        import signal
+                        process.send_signal(signal.SIGINT)
+                except Exception:
+                    pass
+                
+                try:
+                    exit_code = process.wait(timeout=10.0)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    exit_code = process.wait()
+                raise
+            
+            # Read log file and feed tracker
+            if log_file.exists():
+                # We use replace to handle any non-utf8 characters from terminal
+                text = log_file.read_text(encoding="utf-8", errors="replace")
+                tracker.feed(text)
+                tracker.finalize()
 
-        output_thread.join(timeout=1)
         return CodexRunResult(
             exit_code=exit_code,
             last_non_empty_line=tracker.last_non_empty,

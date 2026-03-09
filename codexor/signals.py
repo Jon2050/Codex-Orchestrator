@@ -15,23 +15,23 @@ def normalize_terminal_text(value: str) -> str:
     return stripped.strip()
 
 
-def parse_final_signal(last_non_empty_line: str) -> FinalSignal:
-    """Parse the final handshake signal from the last non-empty line."""
-    normalized = normalize_terminal_text(last_non_empty_line)
+def parse_final_signal(output_tail: str) -> FinalSignal:
+    """Search for the final handshake signal in the output tail."""
+    # Strip common markdown wrappers like backticks, asterisks, or periods from the search
+    # We search the whole tail because wrappers like Start-Transcript add footers.
     
-    # Strip common markdown wrappers like backticks, asterisks, or periods
-    clean = re.sub(r"^[`*]+|[`*.]+$", "", normalized).strip()
-    
-    if clean == FinalSignal.ALL_DONE.value:
+    if re.search(r"\bALL DONE\b", output_tail, flags=re.IGNORECASE):
         return FinalSignal.ALL_DONE
-    if clean == FinalSignal.BREAK_ON_ERROR.value:
+    if re.search(r"\bBREAK ON ERROR\b", output_tail, flags=re.IGNORECASE):
         return FinalSignal.BREAK_ON_ERROR
+        
     return FinalSignal.INVALID
 
 
 def parse_summary(output_tail: str) -> str:
     """Parse the final summary from the output tail, if present."""
-    match = re.search(r"<summary>(.*?)</summary>", output_tail, flags=re.DOTALL | re.IGNORECASE)
-    if match:
-        return match.group(1).strip()
+    # Search for the last occurrence of summary tags
+    matches = list(re.finditer(r"<summary>(.*?)</summary>", output_tail, flags=re.DOTALL | re.IGNORECASE))
+    if matches:
+        return matches[-1].group(1).strip()
     return ""
