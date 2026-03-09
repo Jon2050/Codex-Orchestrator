@@ -73,13 +73,14 @@ def _resolve_codex_command(cli_tool: str = "codex") -> list[str]:
         return ["claude", "yolo"]
     
     # default to codex
-    return ["codex", "--yolo", "--no-alt-screen"]
+    return ["codex", "--dangerously-bypass-approvals-and-sandbox", "--no-alt-screen"]
 
 
 class CodexRunner:
     """Runs codex process and streams IO in real time."""
 
     def __init__(self, command: list[str] | None = None, cli_tool: str = "codex") -> None:
+        self.cli_tool = cli_tool
         self.command = command if command is not None else _resolve_codex_command(cli_tool)
 
     def run(self, prompt: str, cwd: Path) -> CodexRunResult:
@@ -90,22 +91,22 @@ class CodexRunner:
         executable = self.command[0]
         resolved_executable = shutil.which(executable)
         
-        if resolved_executable:
-            cmd_to_run = [resolved_executable] + self.command[1:]
-        else:
-            cmd_to_run = self.command
+        cmd_to_run = [resolved_executable] + self.command[1:] if resolved_executable else self.command.copy()
+            
+        # For codex, append the prompt as the last CLI argument to avoid piping stdin.
+        if self.cli_tool == "codex":
+            cmd_to_run.append(prompt)
             
         process = subprocess.Popen(
             cmd_to_run,
             cwd=str(cwd),
-            stdin=subprocess.PIPE,
+            stdin=sys.stdin,   # Inherit stdin natively for interactive TTY
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             bufsize=0,
         )
 
         assert process.stdout is not None
-        assert process.stdin is not None
 
         stop_event = threading.Event()
 
@@ -119,47 +120,15 @@ class CodexRunner:
                 sys.stdout.flush()
                 tracker.feed(text)
 
-        def forward_input() -> None:
-            while not stop_event.is_set():
-                try:
-                    if sys.platform == "win32":
-                        import msvcrt
-                        import time
-                        if not msvcrt.kbhit():
-                            time.sleep(0.1)
-                            continue
-                    else:
-                        import select
-                        r, _, _ = select.select([sys.stdin], [], [], 0.1)
-                        if not r:
-                            continue
-                            
-                    line = sys.stdin.buffer.readline()
-                    if not line:
-                        break
-                    if stop_event.is_set() or process.poll() is not None:
-                        break
-                    process.stdin.write(line)
-                    process.stdin.flush()
-                except OSError:
-                    break
-                except ValueError:
-                    break
-                except Exception:
-                    break
-
         output_thread = threading.Thread(target=forward_output, daemon=True)
-        input_thread = threading.Thread(target=forward_input, daemon=True)
         output_thread.start()
 
-        # Send issue-specific prompt first, then keep interactive passthrough active.
-        try:
-            process.stdin.write((prompt.rstrip() + "\n").encode())
-            process.stdin.flush()
-        except OSError:
-            pass  # Process might have already exited (e.g., if it strictly requires a TTY)
-            
-        input_thread.start()
+        # Send issue-specific prompt via stdin ONLY for tools that aren't 'codex'.
+        if self.cli_tool != "codex":
+            # If we need to inject via stdin for other tools, we'd need PIPE, but since we inherited sys.stdin above,
+            # this would break if another tool needs piped input. However, Gemini works natively by just running it 
+            # and typing. If we wanted headless gemini we'd use `-p prompt`.
+            pass
 
         try:
             exit_code = process.wait()
