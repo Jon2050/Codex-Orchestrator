@@ -72,7 +72,7 @@ class Orchestrator:
                     repo_full_name=resolved_repo.repo_full_name,
                 )
                 codex_result = self.codex_runner.run(prompt=prompt, cwd=resolved_repo.local_path)
-                signal = parse_final_signal(codex_result.last_non_empty_line)
+                signal = parse_final_signal(codex_result.output_tail)
                 summary = parse_summary(codex_result.output_tail)
                 issue_finished = datetime.now(timezone.utc)
                 duration = int((issue_finished - issue_started).total_seconds())
@@ -140,7 +140,7 @@ class Orchestrator:
             close_prompt = close_prompt_template.replace("{{MILESTONE_NAME}}", self.config.milestone).replace("{{REPO_FULL_NAME}}", resolved_repo.repo_full_name)
             
             close_result = self.codex_runner.run(prompt=close_prompt, cwd=resolved_repo.local_path)
-            close_signal = parse_final_signal(close_result.last_non_empty_line)
+            close_signal = parse_final_signal(close_result.output_tail)
             
             if close_signal != FinalSignal.ALL_DONE:
                  report.finished_at = datetime.now(timezone.utc)
