@@ -153,8 +153,12 @@ class CodexRunner:
         output_thread.start()
 
         # Send issue-specific prompt first, then keep interactive passthrough active.
-        process.stdin.write((prompt.rstrip() + "\n").encode())
-        process.stdin.flush()
+        try:
+            process.stdin.write((prompt.rstrip() + "\n").encode())
+            process.stdin.flush()
+        except OSError:
+            pass  # Process might have already exited (e.g., if it strictly requires a TTY)
+            
         input_thread.start()
 
         try:
