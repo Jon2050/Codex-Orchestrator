@@ -73,6 +73,7 @@ class Orchestrator:
                 )
                 codex_result = self.codex_runner.run(prompt=prompt, cwd=resolved_repo.local_path)
                 signal = parse_final_signal(codex_result.output_tail)
+                print(f"[codexor] Signal received: {signal.value}")
                 summary = parse_summary(codex_result.output_tail)
                 issue_finished = datetime.now(timezone.utc)
                 duration = int((issue_finished - issue_started).total_seconds())
