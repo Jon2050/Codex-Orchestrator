@@ -72,8 +72,8 @@ def _resolve_codex_command(cli_tool: str = "codex") -> list[str]:
     elif cli_tool == "claude":
         return ["claude", "yolo"]
     
-    # Use 'exec' mode for codex to avoid TTY requirements while remaining interactive
-    return ["codex", "exec", "--full-auto"]
+    # default to codex
+    return ["codex", "--dangerously-bypass-approvals-and-sandbox", "--no-alt-screen"]
 
 
 class CodexRunner:
@@ -87,108 +87,85 @@ class CodexRunner:
         tracker = _OutputTailTracker()
         
         import shutil
+        import tempfile
         
         # Resolve executable to handle Windows .bat/.cmd files properly
         executable = self.command[0]
         resolved_executable = shutil.which(executable)
-        cmd_to_run = [resolved_executable] + self.command[1:] if resolved_executable else self.command.copy()
-            
-        # For codex, append the prompt as the last CLI argument to avoid piping stdin.
-        if "codex" in self.command:
-            cmd_to_run.append(prompt)
-            
-        process = subprocess.Popen(
-            cmd_to_run,
-            cwd=str(cwd),
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            bufsize=0,
-        )
-
-        assert process.stdout is not None
-        assert process.stdin is not None
-
-        stop_event = threading.Event()
-
-        def forward_output() -> None:
-            while True:
-                chunk = process.stdout.read(1024)
-                if not chunk:
-                    break
-                text = chunk.decode(errors="replace")
-                sys.stdout.write(text)
-                sys.stdout.flush()
-                tracker.feed(text)
-
-        def forward_input() -> None:
-            while not stop_event.is_set():
-                try:
-                    if sys.platform == "win32":
-                        import msvcrt
-                        import time
-                        if not msvcrt.kbhit():
-                            time.sleep(0.1)
-                            continue
-                    else:
-                        import select
-                        r, _, _ = select.select([sys.stdin], [], [], 0.1)
-                        if not r:
-                            continue
-                            
-                    line = sys.stdin.buffer.readline()
-                    if not line:
-                        break
-                    if stop_event.is_set() or process.poll() is not None:
-                        break
-                    process.stdin.write(line)
-                    process.stdin.flush()
-                except OSError:
-                    break
-                except ValueError:
-                    break
-                except Exception:
-                    break
-
-        output_thread = threading.Thread(target=forward_output, daemon=True)
-        input_thread = threading.Thread(target=forward_input, daemon=True)
-        output_thread.start()
-
-        # Send issue-specific prompt via stdin ONLY for tools that aren't 'codex'.
-        if "codex" not in self.command:
-            try:
-                process.stdin.write((prompt.rstrip() + "\n").encode())
-                process.stdin.flush()
-            except OSError:
-                pass
         
-        input_thread.start()
-
-        try:
-            exit_code = process.wait()
-        except KeyboardInterrupt:
-            try:
-                if sys.platform != "win32":
-                    import signal
-                    process.send_signal(signal.SIGINT)
-            except Exception:
-                pass
+        # We'll handle prompt passing via shell variables/files to ensure multi-line works
+        with tempfile.TemporaryDirectory(prefix="codexor-") as tmpdir:
+            log_file = Path(tmpdir) / "output.log"
+            prompt_file = Path(tmpdir) / "prompt.txt"
+            prompt_file.write_text(prompt, encoding="utf-8")
             
-            try:
-                exit_code = process.wait(timeout=10.0)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                exit_code = process.wait()
-            raise
-        finally:
-            stop_event.set()
-            tracker.finalize()
-            if process.stdin:
-                process.stdin.close()
-            if process.stdout:
-                process.stdout.close()
+            if sys.platform == "win32":
+                # Create a wrapper PS1 to use Start-Transcript and pass prompt via variable
+                wrapper_ps1 = Path(tmpdir) / "run.ps1"
+                
+                # Build the argument string for the inner command
+                inner_args = []
+                for arg in self.command[1:]:
+                    # Double up quotes for PowerShell string literals
+                    inner_args.append('"' + arg.replace('"', '""') + '"')
+                
+                ps_content = [
+                    # Use -Raw to ensure newlines are preserved exactly
+                    f'$p_text = Get-Content -Path "{prompt_file}" -Raw',
+                    f'Start-Transcript -Path "{log_file}" -Append -Force',
+                    f'& "{resolved_executable}" {" ".join(inner_args)} $p_text',
+                    '$exit = $LASTEXITCODE',
+                    'Stop-Transcript',
+                    'exit $exit'
+                ]
+                wrapper_ps1.write_text("\n".join(ps_content), encoding="utf-8")
+                
+                cmd_to_run = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(wrapper_ps1)]
+            else:
+                # Use script on Unix
+                import shlex
+                flat_cmd = shlex.join(self.command + [prompt])
+                if sys.platform == "darwin":
+                    cmd_to_run = ["script", "-q", str(log_file), flat_cmd]
+                else:
+                    cmd_to_run = ["script", "-q", "-e", "-c", flat_cmd, str(log_file)]
 
-        output_thread.join(timeout=1)
+            # stdout=None and stderr=None means it inherits the parent terminal's handles
+            # This allows the child to pass TTY checks and remain interactive
+            process = subprocess.Popen(
+                cmd_to_run,
+                cwd=str(cwd),
+                stdin=sys.stdin, 
+                stdout=None,
+                stderr=None,
+            )
+
+            try:
+                exit_code = process.wait()
+            except KeyboardInterrupt:
+                try:
+                    if sys.platform != "win32":
+                        import signal
+                        process.send_signal(signal.SIGINT)
+                except Exception:
+                    pass
+                
+                try:
+                    exit_code = process.wait(timeout=10.0)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    exit_code = process.wait()
+                raise
+            
+            # Read log file and feed tracker
+            if log_file.exists():
+                import time
+                time.sleep(0.5) # Give OS time to flush
+                # Transcript might have BOM or different encoding
+                text = log_file.read_text(encoding="utf-8-sig", errors="replace")
+                tracker.feed(text)
+                tracker.finalize()
+
         return CodexRunResult(
             exit_code=exit_code,
             last_non_empty_line=tracker.last_non_empty,
