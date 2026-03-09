@@ -68,9 +68,9 @@ def _resolve_codex_command(cli_tool: str = "codex") -> list[str]:
         return shlex.split(override, posix=True)
         
     if cli_tool == "gemini":
-        return ["gemini", "run"] # Gemini CLI command for non-interactive task runner
+        return ["gemini", "--yolo"]
     elif cli_tool == "claude":
-        return ["claude", "yolo"] # Example Claude command (placeholder if real one differs)
+        return ["claude", "yolo"]
     
     # default to codex
     return ["codex", "--yolo", "--no-alt-screen"]
