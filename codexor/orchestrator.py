@@ -72,7 +72,6 @@ class Orchestrator:
                     repo_full_name=resolved_repo.repo_full_name,
                 )
                 codex_result = self.codex_runner.run(prompt=prompt, cwd=resolved_repo.local_path)
-                print(f"DEBUG: Output tail: {codex_result.output_tail!r}")
                 signal = parse_final_signal(codex_result.output_tail)
                 print(f"[codexor] Signal received: {signal.value}")
                 summary = parse_summary(codex_result.output_tail)
