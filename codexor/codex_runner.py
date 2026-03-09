@@ -111,8 +111,14 @@ class CodexRunner:
         def forward_input() -> None:
             while not stop_event.is_set():
                 try:
-                    import select
-                    if sys.platform != "win32":
+                    if sys.platform == "win32":
+                        import msvcrt
+                        import time
+                        if not msvcrt.kbhit():
+                            time.sleep(0.1)
+                            continue
+                    else:
+                        import select
                         r, _, _ = select.select([sys.stdin], [], [], 0.1)
                         if not r:
                             continue
