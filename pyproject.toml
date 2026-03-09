@@ -13,6 +13,9 @@ dependencies = []
 [project.scripts]
 codexor = "codexor.cli:main"
 
+[tool.setuptools]
+packages = ["codexor"]
+
 [tool.setuptools.package-data]
 codexor = ["prompts/*.md"]
 
