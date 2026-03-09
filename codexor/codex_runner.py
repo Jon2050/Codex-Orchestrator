@@ -72,8 +72,8 @@ def _resolve_codex_command(cli_tool: str = "codex") -> list[str]:
     elif cli_tool == "claude":
         return ["claude", "yolo"]
     
-    # default to codex
-    return ["codex", "--dangerously-bypass-approvals-and-sandbox", "--no-alt-screen"]
+    # Use 'exec' mode for codex to avoid TTY requirements while remaining interactive
+    return ["codex", "exec", "--full-auto"]
 
 
 class CodexRunner:
@@ -87,81 +87,108 @@ class CodexRunner:
         tracker = _OutputTailTracker()
         
         import shutil
-        import tempfile
-        import shlex
         
         # Resolve executable to handle Windows .bat/.cmd files properly
         executable = self.command[0]
         resolved_executable = shutil.which(executable)
-        base_cmd = [resolved_executable] + self.command[1:] if resolved_executable else self.command.copy()
+        cmd_to_run = [resolved_executable] + self.command[1:] if resolved_executable else self.command.copy()
             
         # For codex, append the prompt as the last CLI argument to avoid piping stdin.
-        if self.cli_tool == "codex":
-            base_cmd.append(prompt)
+        if "codex" in self.command:
+            cmd_to_run.append(prompt)
             
-        with tempfile.TemporaryDirectory(prefix="codexor-") as tmpdir:
-            log_file = Path(tmpdir) / "output.log"
-            
-            if sys.platform == "win32":
-                # Create a wrapper PS1 to use Start-Transcript
-                wrapper_ps1 = Path(tmpdir) / "run.ps1"
-                
-                escaped_args = []
-                for arg in base_cmd:
-                    # Double up quotes for PowerShell string literals
-                    escaped_args.append('"' + arg.replace('"', '""') + '"')
-                
-                ps_content = [
-                    f'Start-Transcript -Path "{log_file}"',
-                    f'& {" ".join(escaped_args)}',
-                    '$exit = $LASTEXITCODE',
-                    'Stop-Transcript',
-                    'exit $exit'
-                ]
-                wrapper_ps1.write_text("\n".join(ps_content), encoding="utf-8")
-                cmd_to_run = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(wrapper_ps1)]
-            else:
-                # Use script on Unix
-                flat_cmd = shlex.join(base_cmd)
-                if sys.platform == "darwin":
-                    cmd_to_run = ["script", "-q", str(log_file), flat_cmd]
-                else:
-                    cmd_to_run = ["script", "-q", "-e", "-c", flat_cmd, str(log_file)]
+        process = subprocess.Popen(
+            cmd_to_run,
+            cwd=str(cwd),
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            bufsize=0,
+        )
 
-            process = subprocess.Popen(
-                cmd_to_run,
-                cwd=str(cwd),
-                stdin=sys.stdin,   # Inherit stdin natively for interactive TTY
-                stdout=None,       # Output directly to terminal to satisfy TTY checks
-                stderr=None,
-            )
+        assert process.stdout is not None
+        assert process.stdin is not None
 
-            try:
-                exit_code = process.wait()
-            except KeyboardInterrupt:
-                try:
-                    if sys.platform != "win32":
-                        import signal
-                        process.send_signal(signal.SIGINT)
-                except Exception:
-                    pass
-                
-                try:
-                    exit_code = process.wait(timeout=10.0)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    exit_code = process.wait()
-                raise
-            
-            # Read log file and feed tracker
-            if log_file.exists():
-                import time
-                time.sleep(0.2)  # Give the OS a moment to flush the file
-                # Use utf-8-sig to handle BOM from PowerShell
-                text = log_file.read_text(encoding="utf-8-sig", errors="replace")
+        stop_event = threading.Event()
+
+        def forward_output() -> None:
+            while True:
+                chunk = process.stdout.read(1024)
+                if not chunk:
+                    break
+                text = chunk.decode(errors="replace")
+                sys.stdout.write(text)
+                sys.stdout.flush()
                 tracker.feed(text)
-                tracker.finalize()
 
+        def forward_input() -> None:
+            while not stop_event.is_set():
+                try:
+                    if sys.platform == "win32":
+                        import msvcrt
+                        import time
+                        if not msvcrt.kbhit():
+                            time.sleep(0.1)
+                            continue
+                    else:
+                        import select
+                        r, _, _ = select.select([sys.stdin], [], [], 0.1)
+                        if not r:
+                            continue
+                            
+                    line = sys.stdin.buffer.readline()
+                    if not line:
+                        break
+                    if stop_event.is_set() or process.poll() is not None:
+                        break
+                    process.stdin.write(line)
+                    process.stdin.flush()
+                except OSError:
+                    break
+                except ValueError:
+                    break
+                except Exception:
+                    break
+
+        output_thread = threading.Thread(target=forward_output, daemon=True)
+        input_thread = threading.Thread(target=forward_input, daemon=True)
+        output_thread.start()
+
+        # Send issue-specific prompt via stdin ONLY for tools that aren't 'codex'.
+        if "codex" not in self.command:
+            try:
+                process.stdin.write((prompt.rstrip() + "\n").encode())
+                process.stdin.flush()
+            except OSError:
+                pass
+        
+        input_thread.start()
+
+        try:
+            exit_code = process.wait()
+        except KeyboardInterrupt:
+            try:
+                if sys.platform != "win32":
+                    import signal
+                    process.send_signal(signal.SIGINT)
+            except Exception:
+                pass
+            
+            try:
+                exit_code = process.wait(timeout=10.0)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                exit_code = process.wait()
+            raise
+        finally:
+            stop_event.set()
+            tracker.finalize()
+            if process.stdin:
+                process.stdin.close()
+            if process.stdout:
+                process.stdout.close()
+
+        output_thread.join(timeout=1)
         return CodexRunResult(
             exit_code=exit_code,
             last_non_empty_line=tracker.last_non_empty,
