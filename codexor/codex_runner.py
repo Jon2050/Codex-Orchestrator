@@ -59,21 +59,28 @@ class _OutputTailTracker:
             return self._tail_text
 
 
-def _resolve_codex_command() -> list[str]:
-    """Resolve codex command, allowing environment override for testing."""
+def _resolve_codex_command(cli_tool: str = "codex") -> list[str]:
+    """Resolve command, allowing environment override for testing."""
     override = os.environ.get("CODEXOR_CODEX_CMD", "").strip()
-    if not override:
-        return list(DEFAULT_CODEX_COMMAND)
-    if os.name == "nt":
-        return shlex.split(override, posix=False)
-    return shlex.split(override, posix=True)
+    if override:
+        if os.name == "nt":
+            return shlex.split(override, posix=False)
+        return shlex.split(override, posix=True)
+        
+    if cli_tool == "gemini":
+        return ["gemini", "run"] # Gemini CLI command for non-interactive task runner
+    elif cli_tool == "claude":
+        return ["claude", "yolo"] # Example Claude command (placeholder if real one differs)
+    
+    # default to codex
+    return ["codex", "--yolo", "--no-alt-screen"]
 
 
 class CodexRunner:
     """Runs codex process and streams IO in real time."""
 
-    def __init__(self, command: list[str] | None = None) -> None:
-        self.command = command if command is not None else _resolve_codex_command()
+    def __init__(self, command: list[str] | None = None, cli_tool: str = "codex") -> None:
+        self.command = command if command is not None else _resolve_codex_command(cli_tool)
 
     def run(self, prompt: str, cwd: Path) -> CodexRunResult:
         tracker = _OutputTailTracker()
@@ -126,8 +133,19 @@ class CodexRunner:
         try:
             exit_code = process.wait()
         except KeyboardInterrupt:
-            process.terminate()
-            exit_code = process.wait()
+            try:
+                if sys.platform != "win32":
+                    import signal
+                    process.send_signal(signal.SIGINT)
+            except Exception:
+                pass
+            
+            try:
+                exit_code = process.wait(timeout=10.0)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                exit_code = process.wait()
+            raise
         finally:
             stop_event.set()
             tracker.finalize()

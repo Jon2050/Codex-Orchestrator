@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 
 from .codex_runner import CodexRunner
 from .errors import ValidationError
@@ -15,9 +16,10 @@ from .models import (
     RunConfig,
     RunReport,
     RunStatus,
+    MilestoneIssue,
 )
 from .reporting import ReportWriter, build_report_path
-from .repo import cleanup_temporary_repo, resolve_repo_target
+from .repo import resolve_repo_target
 from .signals import parse_final_signal
 from .template import load_prompt_template, render_prompt
 
@@ -27,12 +29,12 @@ class Orchestrator:
 
     def __init__(self, config: RunConfig) -> None:
         self.config = config
-        self.codex_runner = CodexRunner()
+        self.codex_runner = CodexRunner(cli_tool=config.cli_tool)
 
     def run(self) -> tuple[RunReport, str]:
         started_at = datetime.now(timezone.utc)
         prompt_template = load_prompt_template(self.config.prompt_template)
-        resolved_repo = resolve_repo_target(self.config.repo)
+        resolved_repo = resolve_repo_target(self.config.cwd)
 
         report = RunReport(
             repo_full_name=resolved_repo.repo_full_name,
@@ -49,6 +51,10 @@ class Orchestrator:
                     f"No open issues found for milestone '{self.config.milestone}'."
                 )
             ordered_issues = attach_and_sort_issues(issues)
+            
+            print(f"[codexor] Ordered issues for milestone '{self.config.milestone}':")
+            for issue in ordered_issues:
+                print(f"  - #{issue.number}: {issue.title}")
 
             for issue in ordered_issues:
                 issue_started = datetime.now(timezone.utc)
@@ -90,7 +96,7 @@ class Orchestrator:
                     )
                     report.entries.append(entry)
                     report.finished_at = datetime.now(timezone.utc)
-                    report.status = RunStatus.HALTED
+                    report.status = RunStatus.BLOCKED
                     writer.write(report)
                     return report, str(report_path)
 
@@ -112,16 +118,38 @@ class Orchestrator:
                 writer.write(report)
                 return report, str(report_path)
 
+            # All issues completed successfully. Close the milestone.
+            print(f"\n[codexor] Closing milestone '{self.config.milestone}'...")
+            close_milestone_template_path = Path(__file__).parent / "prompts" / "close_milestone.md"
+            if close_milestone_template_path.exists():
+                close_prompt_template = close_milestone_template_path.read_text(encoding="utf-8")
+            else:
+                raise ValidationError("Missing internal close_milestone.md prompt.")
+                
+            dummy_issue = MilestoneIssue(number=0, title="Close Milestone", body="", url="", key=None)
+            close_prompt = close_prompt_template.replace("{{MILESTONE_NAME}}", self.config.milestone).replace("{{REPO_FULL_NAME}}", resolved_repo.repo_full_name)
+            
+            close_result = self.codex_runner.run(prompt=close_prompt, cwd=resolved_repo.local_path)
+            close_signal = parse_final_signal(close_result.last_non_empty_line)
+            
+            if close_signal != FinalSignal.ALL_DONE:
+                 report.finished_at = datetime.now(timezone.utc)
+                 report.status = RunStatus.HALTED
+                 writer.write(report)
+                 return report, str(report_path)
+
             report.finished_at = datetime.now(timezone.utc)
             report.status = RunStatus.COMPLETED
             writer.write(report)
             return report, str(report_path)
-        finally:
-            # Keep temporary clones on halted/error runs for manual inspection.
-            run_completed = report.status == RunStatus.COMPLETED
-            if (
-                resolved_repo.is_temporary_clone
-                and resolved_repo.cleanup_on_success
-                and run_completed
-            ):
-                cleanup_temporary_repo(resolved_repo.local_path)
+            
+        except KeyboardInterrupt:
+            report.finished_at = datetime.now(timezone.utc)
+            report.status = RunStatus.INTERRUPTED
+            writer.write(report)
+            raise
+        except Exception:
+            report.finished_at = datetime.now(timezone.utc)
+            report.status = RunStatus.HALTED
+            writer.write(report)
+            raise

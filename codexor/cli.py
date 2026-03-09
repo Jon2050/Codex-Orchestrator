@@ -20,14 +20,27 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     run_parser = subparsers.add_parser("run", help="Run milestone automation.")
-    run_parser.add_argument("--repo", required=True, help="Local repo path or owner/repo.")
     run_parser.add_argument("--milestone", required=True, help="Milestone name.")
     run_parser.add_argument(
         "--prompt-template",
         required=True,
         help="Path to prompt snippet template file.",
     )
+    run_parser.add_argument(
+        "--cli",
+        default="codex",
+        help="The AI CLI tool to execute (e.g. codex, gemini, claude). Defaults to codex.",
+    )
     return parser
+
+
+def emit_diagnostic(error_code: str, run_status: str, exit_code: int, detail: str) -> None:
+    """Emit canonical diagnostic log line for fatal errors."""
+    detail = detail.replace("\n", " ").replace('"', "'")
+    print(
+        f'[codexor] level=error code={error_code} run_status={run_status} exit_code={exit_code} detail="{detail}"',
+        file=sys.stderr,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -37,28 +50,55 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command != "run":
         parser.print_help()
-        return 2
+        return 4
 
     config = RunConfig(
-        repo=args.repo,
+        cwd=Path.cwd(),
         milestone=args.milestone,
         prompt_template=Path(args.prompt_template),
+        cli_tool=args.cli,
     )
+
+    from .errors import DirtyWorktreeError, ExternalCommandError, ValidationError
 
     try:
         orchestrator = Orchestrator(config)
         report, report_path = orchestrator.run()
+    except ValidationError as exc:
+        emit_diagnostic("invalid_config", "failed_config", 4, str(exc))
+        return 4
+    except ExternalCommandError as exc:
+        emit_diagnostic("dependency_error", "failed_dependency", 5, str(exc))
+        return 5
+    except DirtyWorktreeError as exc:
+        emit_diagnostic("dirty_worktree", "failed_dependency", 5, str(exc))
+        return 5
     except CodexorError as exc:
-        print(f"[codexor] ERROR: {exc}", file=sys.stderr)
+        emit_diagnostic("internal_error", "halted", 1, str(exc))
         return 1
     except KeyboardInterrupt:
-        print("\n[codexor] Interrupted by user.", file=sys.stderr)
+        emit_diagnostic("interrupted", "interrupted", 130, "Operator interrupt.")
         return 130
+    except Exception as exc:
+        emit_diagnostic("unexpected_error", "halted", 1, str(exc))
+        return 1
 
     print("")
     print(f"[codexor] Run status: {report.status.value if report.status else 'unknown'}")
     print(f"[codexor] Report: {report_path}")
-    return 0 if report.status and report.status.value == "completed" else 1
+    
+    if report.status and report.status.value == "completed":
+        return 0
+    elif report.status and report.status.value == "blocked":
+        return 2
+    elif report.status and report.status.value == "halted":
+        # Check if any issue was halted due to invalid signal vs unexpected internal error
+        from .models import IssueStatus
+        for entry in report.entries:
+            if entry.status == IssueStatus.HALTED:
+                return 3
+        return 1
+    return 1
 
 
 if __name__ == "__main__":

@@ -20,9 +20,9 @@ def test_parse_issue_key_missing_raises() -> None:
 
 def test_attach_and_sort_issues_uses_issue_key_order() -> None:
     issues = [
-        MilestoneIssue(number=3, title="M4-06 Third", url="https://example/3"),
-        MilestoneIssue(number=1, title="M4-05 First", url="https://example/1"),
-        MilestoneIssue(number=2, title="M4-051 Second", url="https://example/2"),
+        MilestoneIssue(number=3, title="M4-06 Third", body="body", url="https://example/3"),
+        MilestoneIssue(number=1, title="M4-05 First", body="body", url="https://example/1"),
+        MilestoneIssue(number=2, title="M4-051 Second", body="body", url="https://example/2"),
     ]
     ordered = attach_and_sort_issues(issues)
     ordered_keys = [issue.key.raw for issue in ordered if issue.key]

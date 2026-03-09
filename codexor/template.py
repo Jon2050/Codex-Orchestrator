@@ -13,6 +13,7 @@ SUPPORTED_PLACEHOLDERS = {
     "ISSUE_KEY",
     "ISSUE_NUMBER",
     "ISSUE_TITLE",
+    "ISSUE_BODY",
     "MILESTONE_NAME",
     "REPO_FULL_NAME",
 }
@@ -25,7 +26,11 @@ def load_prompt_template(path: Path) -> str:
         raise ValidationError(f"Prompt template file does not exist: {resolved}")
 
     content = resolved.read_text(encoding="utf-8")
-    found = set(PLACEHOLDER_PATTERN.findall(content))
+    
+    # Hide escaped braces to not treat them as placeholders during validation
+    content_for_validation = content.replace("{{{{", "\x01").replace("}}}}", "\x02")
+    
+    found = set(PLACEHOLDER_PATTERN.findall(content_for_validation))
     unsupported = sorted(found - SUPPORTED_PLACEHOLDERS)
     if unsupported:
         joined = ", ".join(unsupported)
@@ -48,12 +53,19 @@ def render_prompt(
         "ISSUE_KEY": issue.key.raw,
         "ISSUE_NUMBER": str(issue.number),
         "ISSUE_TITLE": issue.title,
+        "ISSUE_BODY": issue.body,
         "MILESTONE_NAME": milestone_name,
         "REPO_FULL_NAME": repo_full_name,
     }
+
+    # Hide escaped braces
+    temp_rendered = template.replace("{{{{", "\x01").replace("}}}}", "\x02")
 
     def replace(match: re.Match[str]) -> str:
         name = match.group(1)
         return mapping[name]
 
-    return PLACEHOLDER_PATTERN.sub(replace, template)
+    temp_rendered = PLACEHOLDER_PATTERN.sub(replace, temp_rendered)
+    
+    # Restore escaped braces
+    return temp_rendered.replace("\x01", "{{").replace("\x02", "}}")

@@ -13,6 +13,9 @@ dependencies = []
 [project.scripts]
 codexor = "codexor.cli:main"
 
+[tool.setuptools.package-data]
+codexor = ["prompts/*.md"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"

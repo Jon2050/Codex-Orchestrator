@@ -18,6 +18,7 @@ def test_render_report_markdown_includes_table_row() -> None:
     issue = MilestoneIssue(
         number=21,
         title="M2-05 Add deployment smoke checks",
+        body="Issue body",
         url="https://example/21",
         key=IssueKey(raw="M2-05", major=2, minor="05"),
     )

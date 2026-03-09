@@ -42,7 +42,7 @@ def load_open_milestone_issues(repo_full_name: str, milestone_name: str) -> list
             "--limit",
             "500",
             "--json",
-            "number,title,url",
+            "number,title,body,url",
         ]
     )
     payload = json.loads(output)
@@ -50,6 +50,7 @@ def load_open_milestone_issues(repo_full_name: str, milestone_name: str) -> list
         MilestoneIssue(
             number=int(item["number"]),
             title=str(item["title"]),
+            body=str(item.get("body", "")),
             url=str(item["url"]),
         )
         for item in payload

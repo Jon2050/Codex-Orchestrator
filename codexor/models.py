@@ -29,15 +29,20 @@ class RunStatus(str, Enum):
 
     COMPLETED = "completed"
     HALTED = "halted"
+    BLOCKED = "blocked"
+    FAILED_CONFIG = "failed_config"
+    FAILED_DEPENDENCY = "failed_dependency"
+    INTERRUPTED = "interrupted"
 
 
 @dataclass(slots=True, frozen=True)
 class RunConfig:
     """Run command configuration."""
 
-    repo: str
+    cwd: Path
     milestone: str
     prompt_template: Path
+    cli_tool: str = "codex"
 
 
 @dataclass(slots=True, frozen=True)
@@ -59,6 +64,7 @@ class MilestoneIssue:
 
     number: int
     title: str
+    body: str
     url: str
     key: IssueKey | None = None
 

@@ -20,12 +20,15 @@ def test_render_prompt_replaces_all_supported_placeholders() -> None:
     issue = MilestoneIssue(
         number=17,
         title="M2-03 Create deploy workflow",
+        body="This is the body",
         url="https://example/17",
         key=IssueKey(raw="M2-03", major=2, minor="03"),
     )
     template = (
         "Task {{ISSUE_KEY}} #{{ISSUE_NUMBER}} {{ISSUE_TITLE}} "
-        "{{MILESTONE_NAME}} {{REPO_FULL_NAME}}"
+        "{{MILESTONE_NAME}} {{REPO_FULL_NAME}}\n"
+        "Body: {{ISSUE_BODY}}\n"
+        "Literal {{{{escaped}}}}"
     )
     rendered = render_prompt(
         template,
@@ -37,3 +40,5 @@ def test_render_prompt_replaces_all_supported_placeholders() -> None:
     assert "#17" in rendered
     assert "M2 - Deploy" in rendered
     assert "example/repo" in rendered
+    assert "This is the body" in rendered
+    assert "Literal {{escaped}}" in rendered
