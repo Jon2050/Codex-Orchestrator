@@ -155,8 +155,10 @@ class CodexRunner:
             
             # Read log file and feed tracker
             if log_file.exists():
-                # We use replace to handle any non-utf8 characters from terminal
-                text = log_file.read_text(encoding="utf-8", errors="replace")
+                import time
+                time.sleep(0.2)  # Give the OS a moment to flush the file
+                # Use utf-8-sig to handle BOM from PowerShell
+                text = log_file.read_text(encoding="utf-8-sig", errors="replace")
                 tracker.feed(text)
                 tracker.finalize()
 
