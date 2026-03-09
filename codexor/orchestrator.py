@@ -50,7 +50,7 @@ class Orchestrator:
                 raise ValidationError(
                     f"No open issues found for milestone '{self.config.milestone}'."
                 )
-            ordered_issues = attach_and_sort_issues(issues)
+            ordered_issues = attach_and_sort_issues(issues, self.config.milestone)
             
             print(f"[codexor] Ordered issues for milestone '{self.config.milestone}':")
             for issue in ordered_issues:

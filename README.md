@@ -12,7 +12,7 @@ It does **not** plan projects, design milestones, write backlog strategy, or rep
 
 1. Hosted on GitHub with `gh` CLI access authenticated.
 2. Milestones and implementation-ready issues exist.
-3. Issues have stable keys matching `\bM(?P<major>\d+)-(?P<minor>\d+)\b` (e.g., `M2-01`). Duplicate keys are not allowed.
+3. Issues have stable keys matching `\bM(?P<major>\d+)-(?P<minor>\d+)\b` (e.g., `M2-01`). Duplicate keys are not allowed, and the issue key prefix (e.g. `M2`) must match the target milestone identifier.
 4. A PR workflow exists (e.g., issue branch -> PR -> merge).
 5. `codex` CLI is installed.
 

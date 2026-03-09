@@ -25,13 +25,27 @@ def parse_issue_key(title: str) -> IssueKey:
     return IssueKey(raw=raw, major=major, minor=minor)
 
 
-def attach_and_sort_issues(issues: list[MilestoneIssue]) -> list[MilestoneIssue]:
+def attach_and_sort_issues(issues: list[MilestoneIssue], milestone_name: str) -> list[MilestoneIssue]:
     """Parse issue keys for all issues and return deterministic issue-key ordering."""
     enriched: list[MilestoneIssue] = []
     seen_keys: set[str] = set()
 
+    # Extract the expected M<major> prefix from the milestone name.
+    milestone_match = re.match(r"^(M\d+)", milestone_name.strip(), flags=re.IGNORECASE)
+    expected_prefix = milestone_match.group(1).upper() if milestone_match else None
+
     for issue in issues:
         issue.key = parse_issue_key(issue.title)
+        
+        # Validate that the issue key belongs to the target milestone
+        if expected_prefix:
+            issue_prefix = f"M{issue.key.major}"
+            if issue_prefix != expected_prefix:
+                raise ValidationError(
+                    f"Issue '{issue.title}' has key '{issue.key.raw}' which does not match "
+                    f"the target milestone '{milestone_name}' ({expected_prefix})."
+                )
+
         if issue.key.raw in seen_keys:
             raise ValidationError(f"Duplicate issue key {issue.key.raw} found in milestone.")
         seen_keys.add(issue.key.raw)
