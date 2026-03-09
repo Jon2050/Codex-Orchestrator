@@ -18,9 +18,13 @@ def normalize_terminal_text(value: str) -> str:
 def parse_final_signal(last_non_empty_line: str) -> FinalSignal:
     """Parse the final handshake signal from the last non-empty line."""
     normalized = normalize_terminal_text(last_non_empty_line)
-    if normalized == FinalSignal.ALL_DONE.value:
+    
+    # Strip common markdown wrappers like backticks, asterisks, or periods
+    clean = re.sub(r"^[`*]+|[`*.]+$", "", normalized).strip()
+    
+    if clean == FinalSignal.ALL_DONE.value:
         return FinalSignal.ALL_DONE
-    if normalized == FinalSignal.BREAK_ON_ERROR.value:
+    if clean == FinalSignal.BREAK_ON_ERROR.value:
         return FinalSignal.BREAK_ON_ERROR
     return FinalSignal.INVALID
 

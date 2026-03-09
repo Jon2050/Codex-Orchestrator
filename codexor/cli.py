@@ -73,6 +73,9 @@ def main(argv: list[str] | None = None) -> int:
     except DirtyWorktreeError as exc:
         emit_diagnostic("dirty_worktree", "failed_dependency", 5, str(exc))
         return 5
+    except FileNotFoundError as exc:
+        emit_diagnostic("missing_cli", "failed_dependency", 5, f"AI CLI tool not found or failed to execute: {exc}")
+        return 5
     except CodexorError as exc:
         emit_diagnostic("internal_error", "halted", 1, str(exc))
         return 1
