@@ -10,13 +10,11 @@ from .models import IssueKey, MilestoneIssue
 ISSUE_KEY_PATTERN = re.compile(r"\b(M(?P<major>\d+)-(?P<minor>\d+))\b", flags=re.IGNORECASE)
 
 
-def parse_issue_key(title: str) -> IssueKey:
-    """Parse an issue key like M4-051 from an issue title."""
+def parse_issue_key(title: str) -> IssueKey | None:
+    """Parse an issue key like M4-051 from an issue title. Returns None if invalid."""
     matches = list(ISSUE_KEY_PATTERN.finditer(title))
-    if not matches:
-        raise ValidationError(f"Issue title has no parseable key: {title}")
-    if len(matches) > 1:
-        raise ValidationError(f"Issue title has multiple parseable keys, exactly one is required: {title}")
+    if not matches or len(matches) > 1:
+        return None
 
     match = matches[0]
     raw = match.group(1).upper()
@@ -26,7 +24,7 @@ def parse_issue_key(title: str) -> IssueKey:
 
 
 def attach_and_sort_issues(issues: list[MilestoneIssue], milestone_name: str) -> list[MilestoneIssue]:
-    """Parse issue keys for all issues and return deterministic issue-key ordering."""
+    """Parse issue keys for all issues and return deterministic issue-key ordering, filtering out invalid issues."""
     enriched: list[MilestoneIssue] = []
     seen_keys: set[str] = set()
 
@@ -37,14 +35,14 @@ def attach_and_sort_issues(issues: list[MilestoneIssue], milestone_name: str) ->
     for issue in issues:
         issue.key = parse_issue_key(issue.title)
         
-        # Validate that the issue key belongs to the target milestone
+        if not issue.key:
+            continue
+        
+        # Filter out issues that do not match the target milestone
         if expected_prefix:
             issue_prefix = f"M{issue.key.major}"
             if issue_prefix != expected_prefix:
-                raise ValidationError(
-                    f"Issue '{issue.title}' has key '{issue.key.raw}' which does not match "
-                    f"the target milestone '{milestone_name}' ({expected_prefix})."
-                )
+                continue
 
         if issue.key.raw in seen_keys:
             raise ValidationError(f"Duplicate issue key {issue.key.raw} found in milestone.")

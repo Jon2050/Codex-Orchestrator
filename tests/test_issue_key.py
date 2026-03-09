@@ -10,12 +10,8 @@ def test_parse_issue_key_success() -> None:
     assert parsed.minor == "051"
 
 
-def test_parse_issue_key_missing_raises() -> None:
-    try:
-        parse_issue_key("No milestone key in title")
-    except ValidationError:
-        return
-    raise AssertionError("Expected ValidationError when key is missing.")
+def test_parse_issue_key_missing_returns_none() -> None:
+    assert parse_issue_key("No milestone key in title") is None
 
 
 def test_attach_and_sort_issues_uses_issue_key_order() -> None:
@@ -29,13 +25,13 @@ def test_attach_and_sort_issues_uses_issue_key_order() -> None:
     assert ordered_keys == ["M4-05", "M4-051", "M4-06"]
 
 
-def test_attach_and_sort_issues_invalid_milestone() -> None:
+def test_attach_and_sort_issues_filters_invalid_milestone() -> None:
     issues = [
         MilestoneIssue(number=1, title="M1-05 First", body="body", url="https://example/1"),
+        MilestoneIssue(number=2, title="M4-02 Second", body="body", url="https://example/2"),
+        MilestoneIssue(number=3, title="No key here", body="body", url="https://example/3"),
     ]
-    try:
-        attach_and_sort_issues(issues, "M4")
-    except ValidationError as e:
-        assert "does not match the target milestone 'M4' (M4)" in str(e)
-        return
-    raise AssertionError("Expected ValidationError when issue key does not match milestone.")
+    ordered = attach_and_sort_issues(issues, "M4")
+    
+    assert len(ordered) == 1
+    assert ordered[0].title == "M4-02 Second"
