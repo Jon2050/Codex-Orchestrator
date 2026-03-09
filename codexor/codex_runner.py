@@ -84,8 +84,19 @@ class CodexRunner:
 
     def run(self, prompt: str, cwd: Path) -> CodexRunResult:
         tracker = _OutputTailTracker()
+        
+        # Resolve executable to handle Windows .bat/.cmd files properly
+        import shutil
+        executable = self.command[0]
+        resolved_executable = shutil.which(executable)
+        
+        if resolved_executable:
+            cmd_to_run = [resolved_executable] + self.command[1:]
+        else:
+            cmd_to_run = self.command
+            
         process = subprocess.Popen(
-            self.command,
+            cmd_to_run,
             cwd=str(cwd),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
