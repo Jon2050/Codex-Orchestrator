@@ -17,11 +17,11 @@ def normalize_terminal_text(value: str) -> str:
 
 def parse_final_signal(output_tail: str) -> FinalSignal:
     """Search for the final handshake signal in the output tail."""
-    normalized = normalize_terminal_text(output_tail)
+    normalized = normalize_terminal_text(output_tail).upper()
     
-    if re.search(r"\bALL DONE\b", normalized, flags=re.IGNORECASE):
+    if "ALL DONE" in normalized:
         return FinalSignal.ALL_DONE
-    if re.search(r"\bBREAK ON ERROR\b", normalized, flags=re.IGNORECASE):
+    if "BREAK ON ERROR" in normalized:
         return FinalSignal.BREAK_ON_ERROR
         
     return FinalSignal.INVALID
