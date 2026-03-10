@@ -17,8 +17,10 @@ def normalize_terminal_text(value: str) -> str:
 
 def parse_final_signal(output_tail: str) -> FinalSignal:
     """Search for the final handshake signal in the output tail."""
+    # Normalize and convert to upper once for search
     normalized = normalize_terminal_text(output_tail).upper()
     
+    # Simple string containment check is most reliable for terminal streams
     if "ALL DONE" in normalized:
         return FinalSignal.ALL_DONE
     if "BREAK ON ERROR" in normalized:
