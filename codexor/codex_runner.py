@@ -72,8 +72,8 @@ def _resolve_codex_command(cli_tool: str = "codex") -> list[str]:
     elif cli_tool == "claude":
         return ["claude", "yolo"]
     
-    # default to codex
-    return ["codex", "--dangerously-bypass-approvals-and-sandbox", "--no-alt-screen"]
+    # Use 'exec' mode for codex to avoid TTY requirements while remaining interactive
+    return ["codex", "exec", "--full-auto"]
 
 
 class CodexRunner:
@@ -109,11 +109,14 @@ class CodexRunner:
                     # Double up quotes for PowerShell string literals
                     inner_args.append('"' + arg.replace('"', '""') + '"')
                 
+                # Conditional prompt passing for PowerShell
+                prompt_arg = '"$p_text"' if self.cli_tool == "codex" else ""
+                
                 ps_content = [
                     # Use -Raw to ensure newlines are preserved exactly
                     f'$p_text = Get-Content -Path "{prompt_file}" -Raw',
                     f'Start-Transcript -Path "{log_file}" -Append -Force',
-                    f'& "{resolved_executable}" {" ".join(inner_args)} $p_text',
+                    f'& "{resolved_executable}" {" ".join(inner_args)} {prompt_arg}',
                     '$exit = $LASTEXITCODE',
                     'Stop-Transcript',
                     'exit $exit'

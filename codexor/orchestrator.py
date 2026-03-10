@@ -71,6 +71,9 @@ class Orchestrator:
                     milestone_name=self.config.milestone,
                     repo_full_name=resolved_repo.repo_full_name,
                 )
+                print("--- PROMPT START ---")
+                print(prompt)
+                print("--- PROMPT END ---")
                 codex_result = self.codex_runner.run(prompt=prompt, cwd=resolved_repo.local_path)
                 signal = parse_final_signal(codex_result.output_tail)
                 print(f"[codexor] Signal received: {signal.value}")
