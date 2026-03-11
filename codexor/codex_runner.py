@@ -159,6 +159,7 @@ class CodexRunner:
         try:
             process.stdin.write((prompt.rstrip() + "\n").encode())
             process.stdin.flush()
+            process.stdin.close()
         except OSError:
             pass
         
