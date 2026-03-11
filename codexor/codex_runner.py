@@ -115,8 +115,12 @@ class CodexRunner:
                     if not chunk:
                         break
                     text = chunk.decode(errors="replace")
-                    sys.stdout.write(text)
+                    
+                    # Prevent single \r from trashing previous output lines by enforcing vertical scrolling
+                    display_text = text.replace("\r\n", "\n").replace("\r", "\n")
+                    sys.stdout.write(display_text)
                     sys.stdout.flush()
+                    
                     tracker.feed(text)
                 except Exception:
                     break
