@@ -85,7 +85,13 @@ class CodexRunner:
         self.command = command if command is not None else _resolve_codex_command(cli_tool)
 
     def run(self, prompt: str, cwd: Path) -> CodexRunResult:
-        tracker = _OutputTailTracker()
+        import tempfile
+        import os
+        import codecs
+
+        fd, prompt_path = tempfile.mkstemp(suffix=".md", prefix="codexor_prompt_")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(prompt.rstrip() + "\n")
         
         import shutil
         
@@ -93,6 +99,13 @@ class CodexRunner:
         executable = self.command[0]
         resolved_executable = shutil.which(executable)
         cmd_to_run = [resolved_executable] + self.command[1:] if resolved_executable else self.command.copy()
+        
+        if "-" in cmd_to_run:
+            # Replace the standalone '-' with the file path
+            idx = cmd_to_run.index("-")
+            cmd_to_run[idx] = prompt_path
+        else:
+            cmd_to_run.append(prompt_path)
             
         process = subprocess.Popen(
             cmd_to_run,
@@ -108,13 +121,16 @@ class CodexRunner:
 
         stop_event = threading.Event()
 
+        decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+
         def forward_output() -> None:
             while True:
                 try:
                     chunk = process.stdout.read(1024)
                     if not chunk:
                         break
-                    text = chunk.decode(errors="replace")
+                    
+                    text = decoder.decode(chunk)
                     
                     # Prevent single \r from trashing previous output lines by enforcing vertical scrolling
                     display_text = text.replace("\r\n", "\n").replace("\r", "\n")
@@ -158,15 +174,6 @@ class CodexRunner:
         input_thread = threading.Thread(target=forward_input, daemon=True)
         
         output_thread.start()
-
-        # Send issue-specific prompt via stdin
-        try:
-            process.stdin.write((prompt.rstrip() + "\n").encode())
-            process.stdin.flush()
-            process.stdin.close()
-        except OSError:
-            pass
-        
         input_thread.start()
 
         try:
@@ -195,6 +202,12 @@ class CodexRunner:
             try:
                 process.stdout.close()
             except Exception:
+                pass
+            
+            # Clean up the temporary prompt file
+            try:
+                os.remove(prompt_path)
+            except OSError:
                 pass
 
         output_thread.join(timeout=1)
